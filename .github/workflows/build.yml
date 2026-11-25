@@ -46,6 +46,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          umask 022
           python3 scripts/validate.py
           make package FINALPACKAGE=1
           python3 scripts/validate.py --packages packages
