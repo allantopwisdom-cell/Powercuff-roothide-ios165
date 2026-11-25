@@ -1,7 +1,6 @@
-._*
-*.deb
-.debmake
-_
-obj
+.theos/
+packages/
 .DS_Store
-.theos
+sdk-revision.txt
+__pycache__/
+*.pyc

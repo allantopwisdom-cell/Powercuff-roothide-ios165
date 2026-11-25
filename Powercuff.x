@@ -1,134 +1,110 @@
+// Derived from rpetrich/Powercuff, revision a97c445a4a8fd2ce1cfe9fbc16fdf82a930b62d1.
+// Original author: Ryan Petrich. See SOURCES.md for provenance.
 #import <Foundation/Foundation.h>
 #import <notify.h>
-
-extern char ***_NSGetArgv(void);
+#import <objc/runtime.h>
 
 @interface CommonProduct : NSObject
-- (void)putDeviceInThermalSimulationMode:(NSString *)simulationMode;
+- (void)putDeviceInThermalSimulationMode:(NSString *)mode;
 @end
 
-static CommonProduct *currentProduct;
-static int token;
+static NSString *const PreferencesDomain = @"com.rpetrich.powercuff";
+static const char *const ThermalNotification = "com.rpetrich.powercuff.thermals";
+static CommonProduct *currentProduct; // Non-owning; cleared by the dealloc hook.
+static int thermalToken = NOTIFY_TOKEN_INVALID;
 
-#if 0
-
-@implementation NSObject(Powercuff)
-+ (id)sharedProduct
-{
-	return currentProduct;
+static NSString *StringForMode(uint64_t mode) {
+    switch (mode) {
+        case 1: return @"nominal";
+        case 2: return @"light";
+        case 3: return @"moderate";
+        case 4: return @"heavy";
+        default: return @"off";
+    }
 }
 
-+ (uint64_t)thermalMode
-{
-	uint64_t thermalMode = 0;
-	notify_get_state(token, &thermalMode);
-	return thermalMode;
-}
-@end
-
-#endif
-
-static NSString *stringForThermalMode(uint64_t thermalMode) {
-	switch (thermalMode) {
-		case 1:
-			return @"nominal";
-		case 2:
-			return @"light";
-		case 3:
-			return @"moderate";
-		case 4:
-			return @"heavy";
-		default:
-			return @"off";
-	}
+static void ApplyThermals(void) {
+    uint64_t mode = 0;
+    if (thermalToken == NOTIFY_TOKEN_INVALID ||
+        notify_get_state(thermalToken, &mode) != NOTIFY_STATUS_OK) return;
+    if ([currentProduct respondsToSelector:@selector(putDeviceInThermalSimulationMode:)]) {
+        [currentProduct putDeviceInThermalSimulationMode:StringForMode(mode)];
+    }
 }
 
-static void ApplyThermals(void)
-{
-	uint64_t thermalMode = 0;
-	notify_get_state(token, &thermalMode);
-	[currentProduct putDeviceInThermalSimulationMode:stringForThermalMode(thermalMode)];
+// Only SpringBoard publishes settings; thermalmonitord only consumes them.
+static void LoadSettings(void) {
+    CFStringRef domain = (CFStringRef)PreferencesDomain;
+    CFPreferencesAppSynchronize(domain);
+    uint64_t mode = 0;
+    CFPropertyListRef value = CFPreferencesCopyValue(
+        CFSTR("PowerMode"), domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+    if (value) {
+        if ([(id)value isKindOfClass:[NSNumber class]]) {
+            NSInteger candidate = [(NSNumber *)value integerValue];
+            if (candidate >= 0 && candidate <= 4) mode = (uint64_t)candidate;
+        }
+        CFRelease(value);
+    }
+    value = CFPreferencesCopyValue(CFSTR("RequireLowPowerMode"), domain,
+        kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+    if (value) {
+        if ([(id)value isKindOfClass:[NSNumber class]] && [(NSNumber *)value boolValue] &&
+            ![[NSProcessInfo processInfo] isLowPowerModeEnabled]) mode = 0;
+        CFRelease(value);
+    }
+    if (notify_set_state(thermalToken, mode) == NOTIFY_STATUS_OK) {
+        notify_post(ThermalNotification);
+    }
 }
 
-%group thermalmonitord
+static void SettingsChanged(CFNotificationCenterRef center, void *observer,
+                            CFStringRef name, const void *object, CFDictionaryRef info) {
+    (void)center; (void)observer; (void)name; (void)object; (void)info;
+    dispatch_async(dispatch_get_main_queue(), ^{ LoadSettings(); });
+}
 
+%group ThermalDaemon
 %hook CommonProduct
-
-- (id)initProduct:(id)data
-{
-	if ((self = %orig())) {
-		if ([self respondsToSelector:@selector(putDeviceInThermalSimulationMode:)]) {
-			currentProduct = self;
-			ApplyThermals();
-		}
-	}
-	return self;
+- (id)initProduct:(id)data {
+    self = %orig(data);
+    if ([self respondsToSelector:@selector(putDeviceInThermalSimulationMode:)]) {
+        currentProduct = self;
+        ApplyThermals();
+    }
+    return self;
 }
-
-- (void)dealloc
-{
-	if (currentProduct == self) {
-		currentProduct = nil;
-	}
-	%orig();
+- (void)dealloc {
+    if (currentProduct == self) currentProduct = nil;
+    %orig;
 }
-
+%end
 %end
 
-%end
-
-@interface _CDBatterySaver : NSObject
-+ (_CDBatterySaver *)batterySaver;
-- (NSInteger)getPowerMode;
-@end
-
-static void LoadSettings(void)
-{
-	CFPropertyListRef powerMode = CFPreferencesCopyValue(CFSTR("PowerMode"), CFSTR("com.rpetrich.powercuff"), kCFPreferencesCurrentUser, kCFPreferencesCurrentHost);
-	uint64_t thermalMode = 0;
-	if (powerMode) {
-		if ([(id)powerMode isKindOfClass:[NSNumber class]]) {
-			thermalMode = (uint64_t)[(NSNumber *)powerMode unsignedLongLongValue];
-		}
-		CFRelease(powerMode);
-	}
-	CFPropertyListRef requireLowPowerMode = CFPreferencesCopyValue(CFSTR("RequireLowPowerMode"), CFSTR("com.rpetrich.powercuff"), kCFPreferencesCurrentUser, kCFPreferencesCurrentHost);
-	if (requireLowPowerMode && [(id)requireLowPowerMode isKindOfClass:[NSNumber class]] && [(id)requireLowPowerMode boolValue]) {
-		if ([[%c(_CDBatterySaver) batterySaver] getPowerMode] == 0) {
-			thermalMode = 0;
-		}
-	}
-	notify_set_state(token, thermalMode);
-	notify_post("com.rpetrich.powercuff.thermals");
-}
-
-%group SpringBoard
-
-%hook SpringBoard
-
-- (void)_batterySaverModeChanged:(NSInteger)token
-{
-	%orig();
-	LoadSettings();
-}
-
-%end
-
-%end
-
-%ctor
-{
-	notify_register_check("com.rpetrich.powercuff.thermals", &token);
-	char *argv0 = **_NSGetArgv();
-    char *path = strrchr(argv0, '/');
-    path = path == NULL ? argv0 : path + 1;
-    if (strcmp(path, "thermalmonitord") == 0) {
-		CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (void *)ApplyThermals, CFSTR("com.rpetrich.powercuff.thermals"), NULL, CFNotificationSuspensionBehaviorCoalesce);
-		%init(thermalmonitord);
-    } else {
-	    CFNotificationCenterRef center = CFNotificationCenterGetDarwinNotifyCenter();
-		CFNotificationCenterAddObserver(center, NULL, (void *)LoadSettings, CFSTR("com.rpetrich.powercuff.settingschanged"), NULL, CFNotificationSuspensionBehaviorCoalesce);
-		LoadSettings();
-		%init(SpringBoard);
+%ctor {
+    @autoreleasepool {
+        NSString *process = [[NSProcessInfo processInfo] processName];
+        if ([process isEqualToString:@"thermalmonitord"]) {
+            uint32_t status = notify_register_dispatch(ThermalNotification, &thermalToken,
+                dispatch_get_main_queue(), ^(int token) { (void)token; ApplyThermals(); });
+            if (status != NOTIFY_STATUS_OK) return;
+            Class productClass = NSClassFromString(@"CommonProduct");
+            if (productClass && class_getInstanceMethod(productClass, @selector(initProduct:)) &&
+                class_getInstanceMethod(productClass, @selector(putDeviceInThermalSimulationMode:))) {
+                %init(ThermalDaemon);
+            } else {
+                NSLog(@"[Powercuff] Thermal API unavailable; no thermal hooks installed.");
+            }
+        } else if ([process isEqualToString:@"SpringBoard"]) {
+            if (notify_register_check(ThermalNotification, &thermalToken) != NOTIFY_STATUS_OK) return;
+            CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL,
+                SettingsChanged, CFSTR("com.rpetrich.powercuff.settingschanged"), NULL,
+                CFNotificationSuspensionBehaviorCoalesce);
+            [[NSNotificationCenter defaultCenter]
+                addObserverForName:NSProcessInfoPowerStateDidChangeNotification
+                object:nil queue:[NSOperationQueue mainQueue]
+                usingBlock:^(NSNotification *note) { (void)note; LoadSettings(); }];
+            LoadSettings();
+        }
     }
 }

@@ -1,0 +1,59 @@
+name: Build roothide deb
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 25
+    env:
+      THEOS_REVISION: 958fea4f779943505b15b93c88bb4db8d97b346d
+      SDK_REVISION: 0222fd5413cf4b9af096f37b4621afa2688572f7
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install packaging tools
+        run: brew list ldid xz make >/dev/null 2>&1 || brew install ldid xz make
+      - name: Checkout pinned roothide Theos
+        shell: bash
+        run: |
+          set -euo pipefail
+          export THEOS="$RUNNER_TEMP/theos"
+          git init "$THEOS"
+          git -C "$THEOS" remote add origin https://github.com/roothide/theos.git
+          git -C "$THEOS" fetch --depth 1 origin "$THEOS_REVISION"
+          git -C "$THEOS" checkout --detach FETCH_HEAD
+          git -C "$THEOS" submodule update --init --recursive --depth 1
+          echo "THEOS=$THEOS" >> "$GITHUB_ENV"
+      - name: Install iOS 16.5 SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init "$RUNNER_TEMP/ios-sdks"
+          git -C "$RUNNER_TEMP/ios-sdks" remote add origin https://github.com/theos/sdks.git
+          git -C "$RUNNER_TEMP/ios-sdks" fetch --depth 1 origin "$SDK_REVISION"
+          git -C "$RUNNER_TEMP/ios-sdks" checkout --detach FETCH_HEAD
+          test -d "$RUNNER_TEMP/ios-sdks/iPhoneOS16.5.sdk"
+          cp -R "$RUNNER_TEMP/ios-sdks/iPhoneOS16.5.sdk" "$THEOS/sdks/"
+          git -C "$RUNNER_TEMP/ios-sdks" rev-parse HEAD > sdk-revision.txt
+      - name: Validate source and build
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/validate.py
+          make package FINALPACKAGE=1
+          python3 scripts/validate.py --packages packages
+          shasum -a 256 packages/*.deb > packages/SHA256SUMS
+          cp sdk-revision.txt packages/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Powercuff-roothide-arm64e
+          path: packages/
+          if-no-files-found: error
+          retention-days: 30

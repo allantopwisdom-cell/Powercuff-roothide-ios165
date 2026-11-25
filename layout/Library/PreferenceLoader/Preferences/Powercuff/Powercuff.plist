@@ -8,8 +8,6 @@
 	<dict>
 		<key>cell</key>
 		<string>PSLinkCell</string>
-		<key>icon</key>
-		<string>/Library/PreferenceLoader/Preferences/Powercuff/Powercuff.png</string>
 		<key>label</key>
 		<string>Powercuff</string>
 	</dict>
@@ -19,7 +17,7 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>footerText</key>
-			<string>© 2020 Ryan Petrich</string>
+			<string>Ryan Petrich 原作；roothide 适配构建。先从轻度开始；关闭后恢复系统温控。</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -33,14 +31,14 @@
 			<key>key</key>
 			<string>PowerMode</string>
 			<key>label</key>
-			<string>Throttling</string>
+			<string>节流模式</string>
 			<key>validTitles</key>
 			<array>
-				<string>None</string>
+				<string>关闭（系统控制）</string>
 				<string>Nominal</string>
-				<string>Light</string>
-				<string>Moderate</string>
-				<string>Heavy</string>
+				<string>轻度</string>
+				<string>中度</string>
+				<string>重度</string>
 			</array>
 			<key>validValues</key>
 			<array>
@@ -63,7 +61,7 @@
 			<key>key</key>
 			<string>RequireLowPowerMode</string>
 			<key>label</key>
-			<string>Only in Low Power Mode</string>
+			<string>仅低电量模式启用</string>
 			<key>PostNotification</key>
 			<string>com.rpetrich.powercuff.settingschanged</string>
 		</dict>

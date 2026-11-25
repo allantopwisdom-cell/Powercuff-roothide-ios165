@@ -1,0 +1,11 @@
+Package: com.rpetrich.powercuff
+Name: Powercuff (roothide)
+Version: 0.1.1~roothide1
+Architecture: iphoneos-arm64e
+Description: Thermal simulation controls, rebuilt for roothide. Device validation required.
+Maintainer: Powercuff roothide build
+Author: Ryan Petrich <rpetrich+powercuff@gmail.com>
+Section: Tweaks
+Depends: firmware (>= 15.0), firmware (<< 17.0), mobilesubstrate, preferenceloader
+Homepage: https://github.com/rpetrich/Powercuff
+Tag: purpose::extension
