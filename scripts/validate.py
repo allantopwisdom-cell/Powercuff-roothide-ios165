@@ -59,5 +59,5 @@ if args.packages:
             subtype = int.from_bytes(binary[8:12], 'little')
             assert subtype & 0xffffff == 2, 'Expected arm64e'
             assert subtype & 0x80000000, 'Expected the iOS 14+ arm64e ABI'
-            print(f'{package.name}: roothide layout, arm64e ABI v{subtype >> 24 & 0x7f}, {len(binary)} bytes')
+            print(f'{package.name}: roothide layout, arm64e subtype 0x{subtype:08x}, {len(binary)} bytes')
 print('Source/package checks passed')
