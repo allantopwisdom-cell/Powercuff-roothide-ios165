@@ -21,7 +21,10 @@ assert filter_plist['Filter']['Executables'] == ['thermalmonitord', 'SpringBoard
 source = (ROOT / 'Powercuff.x').read_text()
 assert '/var/jb' not in source, 'Do not hardcode the jailbreak root'
 assert 'kCFPreferencesAnyHost' in source
-prefs = plistlib.loads((ROOT / 'layout/Library/PreferenceLoader/Preferences/Powercuff/Powercuff.plist').read_bytes())
+prefs_path = ROOT / 'layout/Library/PreferenceLoader/Preferences/Powercuff.plist'
+assert prefs_path.is_file(), 'Standalone PreferenceLoader plist must be directly under Preferences'
+assert not (prefs_path.parent / 'Powercuff' / prefs_path.name).exists(), 'Do not nest standalone PreferenceLoader plists'
+prefs = plistlib.loads(prefs_path.read_bytes())
 mode = next(item for item in prefs['items'] if item.get('key') == 'PowerMode')
 assert mode['validValues'] == [0, 1, 2, 3, 4]
 assert mode['default'] == 0
@@ -51,7 +54,8 @@ if args.packages:
             dylib = 'Library/MobileSubstrate/DynamicLibraries/Powercuff.dylib'
             assert dylib in files, 'Unexpected rootless payload layout'
             assert dylib.replace('.dylib', '.plist') in files
-            assert 'Library/PreferenceLoader/Preferences/Powercuff/Powercuff.plist' in files
+            assert 'Library/PreferenceLoader/Preferences/Powercuff.plist' in files
+            assert 'Library/PreferenceLoader/Preferences/Powercuff/Powercuff.plist' not in files
             assert not any(p.startswith('var/jb/') for p in files)
             binary = archive.extractfile(files[dylib]).read()
             assert binary[:4] == b'\xcf\xfa\xed\xfe', 'Expected thin 64-bit Mach-O'
